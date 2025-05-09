@@ -76,7 +76,7 @@ void add_student(int sock) {// Receive username and password
 
     // Construct student entry
     char entry[BUFFER_SIZE];
-    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s::1\n", received_username, received_password);
+    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s: :1\n", received_username, received_password);
 
     // Open students.txt in append mode, create if doesn't exist
     int fd = open("students.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -139,22 +139,17 @@ void view_student_details(int sock) {
             char temp_line[BUFFER_SIZE];
             strcpy(temp_line, line); // to preserve original
             char *token = strtok(temp_line, ":"); // username
-            printf("Token: %s\n", token);
-
             if (token && strcmp(token, username) == 0) {
                 found = 1;
 
                 // Skip username and password
                 token = strtok(NULL, ":");
                 token = strtok(NULL, ":");
-
                 // Extract courses
-                if (token) {
-                    write(STDOUT_FILENO, "Courses: ", 9);
-                    write(STDOUT_FILENO, token, strlen(token));
-                    write(STDOUT_FILENO, "\n", 1);
+                if (strcmp(token, "x") != 0){
+                    write(sock, token, strlen(token));
                 } else {
-                    write(STDOUT_FILENO, "No courses found.\n", 18);
+                    write(sock, "No courses found.\n", 18);
                 }
 
                 break;

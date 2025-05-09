@@ -61,7 +61,9 @@ void view_student_details(int sock) {
     if (strcmp(response, "Student not found.\n") == 0) {
         write(STDERR_FILENO, response, strlen(response));
     } else {
+        write(STDOUT_FILENO, "Student courses: ", 17);
         write(STDOUT_FILENO, response, strlen(response));
+        write(STDOUT_FILENO, "\n", 1);
     }
 }
 
