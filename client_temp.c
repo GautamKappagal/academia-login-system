@@ -41,6 +41,39 @@ void add_student(int sock) {
     }
 }
 
+void add_faculty(int sock) {
+    char username[BUFFER_SIZE] = {0};
+    char password[BUFFER_SIZE] = {0};
+
+    // Get faculty username
+    write(STDOUT_FILENO, "Enter faculty username: ", 25);
+    int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
+    if (ulen > 0 && username[ulen - 1] == '\n') {
+        username[ulen - 1] = '\0';
+    }
+
+    // Get faculty password
+    write(STDOUT_FILENO, "Enter faculty password: ", 25);
+    int plen = read(STDIN_FILENO, password, BUFFER_SIZE);
+    if (plen > 0 && password[plen - 1] == '\n') {
+        password[plen - 1] = '\0';
+    }
+
+    // Send username and password separately
+    write(sock, username, BUFFER_SIZE);
+    write(sock, password, BUFFER_SIZE);
+
+    // Read whether the faculty was added successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+
+    if (strcmp(response, "Username already exists.\n") == 0) {
+        write(STDERR_FILENO, response, strlen(response));
+    } else {
+        write(STDOUT_FILENO, "Faculty added successfully.\n", 28);
+    }
+}
+
 void view_student_details(int sock) {
     char username[BUFFER_SIZE] = {0};
 
@@ -190,9 +223,34 @@ int main() {
             handle_admin_input(sock, buffer);
         }
     } else if (role_input == '2') {
-        write(STDOUT_FILENO, "Professor menu selected.\n", 25);
+        write(STDOUT_FILENO, "Username: ", 10);
+        scanf("%s", buffer);
+        write(STDOUT_FILENO, "Password: ", 10);
+        scanf("%s", buffer + 50);  // Store password in buffer after username
+
+        // Clear the input buffer
+        while (getchar() != '\n');  // This consumes the newline character
+        // Simulate login process
+        char *username = buffer;
+        char *password = buffer + 50;  // Password is stored after username in buffer
+
+        write(sock, username, BUFFER_SIZE);
+        write(sock, password, BUFFER_SIZE);
+
     } else if (role_input == '3') {
-        write(STDOUT_FILENO, "Student menu selected.\n", 23);
+        write(STDOUT_FILENO, "Username: ", 10);
+        scanf("%s", buffer);
+        write(STDOUT_FILENO, "Password: ", 10);
+        scanf("%s", buffer + 50);  // Store password in buffer after username
+
+        // Clear the input buffer
+        while (getchar() != '\n');  // This consumes the newline character
+        // Simulate login process
+        char *username = buffer;
+        char *password = buffer + 50;  // Password is stored after username in buffer
+
+        write(sock, username, BUFFER_SIZE);
+        write(sock, password, BUFFER_SIZE);
     } else {
         write(STDOUT_FILENO, "Invalid role selected.\n", 23);
     }
