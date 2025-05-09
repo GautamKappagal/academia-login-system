@@ -1,44 +1,74 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h> 
 
-#define PORT 8080
-#define MAX_LEN 1024
+#define BUFFER_SIZE 1024
 
-int main() {
-    int sock;
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+int main(int argc, char *argv[]) {
+    int sockfd, portno, n;
     struct sockaddr_in serv_addr;
-    char buffer[MAX_LEN] = {0};
-    int len;
+    struct hostent *server;
+    char buffer[BUFFER_SIZE];
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (argc < 3) {
+        fprintf(stderr,"usage %s hostname port\n", argv[0]);
+        exit(1);
+    }
+
+    portno = atoi(argv[2]);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) 
+        error("ERROR opening socket");
+
+    server = gethostbyname(argv[1]);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host\n");
+        exit(1);
+    }
+
+    bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
-    connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    bcopy((char *)server->h_addr, 
+         (char *)&serv_addr.sin_addr.s_addr,
+         server->h_length);
+    serv_addr.sin_port = htons(portno);
 
-    // Get username
-    write(1, "Enter username: ", 17);
-    len = read(0, buffer, MAX_LEN);
-    if (len <= 0) _exit(1);
-    buffer[len - 1] = '\0'; // Remove newline
-    write(sock, buffer, strlen(buffer));
-    sleep(1); // Separate messages
+    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+        error("ERROR connecting");
 
-    // Get password
-    write(1, "Enter password: ", 17);
-    len = read(0, buffer, MAX_LEN);
-    if (len <= 0) _exit(1);
-    buffer[len - 1] = '\0';
-    write(sock, buffer, strlen(buffer));
+    while (1) {
+        bzero(buffer, BUFFER_SIZE);
+        n = read(sockfd, buffer, BUFFER_SIZE - 1);
+        if (n < 0) 
+            error("ERROR reading from socket");
+        printf("%s", buffer);
+        
+        if (strstr(buffer, "Enter Your Choice") != NULL || 
+            strstr(buffer, "Enter username") != NULL || 
+            strstr(buffer, "Enter password") != NULL) {
+            bzero(buffer, BUFFER_SIZE);
+            fgets(buffer, BUFFER_SIZE - 1, stdin);
+            n = write(sockfd, buffer, strlen(buffer));
+            if (n < 0) 
+                error("ERROR writing to socket");
+        }
+        
+        if (strstr(buffer, "Logging out") != NULL || 
+            strstr(buffer, "Logging out") != NULL) {
+            break;
+        }
+    }
 
-    // Get result from server
-    memset(buffer, 0, MAX_LEN);
-    len = read(sock, buffer, MAX_LEN);
-    if (len > 0) write(1, buffer, len);
-
-    close(sock);
+    close(sockfd);
     return 0;
 }
