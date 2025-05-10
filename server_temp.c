@@ -211,6 +211,15 @@ void add_faculty(int sock) {
     write(sock, msg, strlen(msg));
 }
 
+void add_course(int sock) {
+    char course_name[BUFFER_SIZE] = {0};
+
+    read(sock, course_name, BUFFER_SIZE);
+    write(STDOUT_FILENO, "Received course: ", 17);
+
+    
+}
+
 void view_student_details(int sock) {
     char username[BUFFER_SIZE] = {0};
 
@@ -304,6 +313,42 @@ int validate_student(const char *username, const char *password) {
     return 0; // not found
 }
 
+int validate_faculty(const char *username, const char *password) {
+    int fd = open("faculties.txt", O_RDONLY);
+    if (fd < 0) {
+        write(STDERR_FILENO, "Error opening faculties.txt\n", 28);
+        return 0; // Assume doesn't exist if file can't be opened
+    }
+
+    char buffer[1];
+    char line[BUFFER_SIZE];
+    int idx = 0;
+    int bytes_read;
+
+    while ((bytes_read = read(fd, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 1) {
+            line[idx] = '\0'; // terminate the string
+
+            // Extract username and password
+            char *token = strtok(line, ":");
+            if (token && strcmp(token, username) == 0) {
+                token = strtok(NULL, ":");
+                if (token && strcmp(token, password) == 0) {
+                    close(fd);
+                    return 1; // found match
+                }
+            }
+
+            idx = 0; // reset for next line
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    close(fd);
+    return 0; // not found
+}
+
 int run_admin_menu(int sock){
     // Receive task choice from client
     char task_choice;
@@ -317,6 +362,24 @@ int run_admin_menu(int sock){
     }
     else if (task_choice == '2') {
         view_student_details(sock);
+    }
+    else if (task_choice == '3') {
+        add_faculty(sock);
+    }
+    else if (task_choice == '4') {
+        write(STDOUT_FILENO, "Viewing faculty details...\n", 28);
+    }
+    else if (task_choice == '5') {
+        write(STDOUT_FILENO, "Activating student...\n", 22);
+    }
+    else if (task_choice == '6') {
+        write(STDOUT_FILENO, "Blocking student...\n", 21);
+    }
+    else if (task_choice == '7') {
+        write(STDOUT_FILENO, "Modifying student details...\n", 30);
+    }
+    else if (task_choice == '8') {
+        write(STDOUT_FILENO, "Modifying faculty details...\n", 30);
     }
     else if (task_choice == '9'){
         char *msg = "Logging out and exiting...\n";

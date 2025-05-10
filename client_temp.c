@@ -90,6 +90,39 @@ void view_student_details(int sock, char *username) {
     }
 }
 
+void add_course(int sock) {
+    char course_name[BUFFER_SIZE] = {0};
+    char faculty_name[BUFFER_SIZE] = {0};
+
+    // Get course name
+    write(STDOUT_FILENO, "Enter course name: ", 19);
+    int clen = read(STDIN_FILENO, course_name, BUFFER_SIZE);
+    if (clen > 0 && course_name[clen - 1] == '\n') {
+        course_name[clen - 1] = '\0';
+    }
+
+    write(sock, course_name, BUFFER_SIZE);
+
+    // Read whether the course was added successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
+void view_courses(int sock) {
+    // Here you would typically send a request to the server to get the list of courses
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+
+    if (strcmp(response, "No courses available.\n") == 0) {
+        write(STDERR_FILENO, response, strlen(response));
+    } else {
+        write(STDOUT_FILENO, "Available courses: ", 19);
+        write(STDOUT_FILENO, response, strlen(response));
+        write(STDOUT_FILENO, "\n", 1);
+    }
+}
+
 // Function to handle user input and display menu
 void handle_admin_input(int sock, char *buffer) {
     // Display menu options
@@ -146,6 +179,46 @@ void handle_admin_input(int sock, char *buffer) {
     }
 }
 
+void handle_faculty_input(int sock, char *username, char *password) {
+    // Display menu options
+    write(STDOUT_FILENO, "1. View Offering Courses\n", 24);
+    write(STDOUT_FILENO, "2. Add New Course\n", 19);
+    write(STDOUT_FILENO, "3. Remove Course from Catalog\n", 34);
+    write(STDOUT_FILENO, "4. Update Course Details\n", 26);
+    write(STDOUT_FILENO, "5. Change Password\n", 20);
+    write(STDOUT_FILENO, "6. Logout and Exit\n", 20);
+
+    // Take user choice
+    char buffer[BUFFER_SIZE] = {0};
+    write(STDOUT_FILENO, "Enter your choice: ", 19);
+    scanf("%s", buffer);
+    // Clear the input buffer
+    while (getchar() != '\n');  // This consumes the newline character
+
+    // Send choice to server
+    write(sock, buffer, strlen(buffer));
+
+    // Handle user choice
+    if (strcmp(buffer, "1") == 0) {
+        write(STDOUT_FILENO, "Viewing offering courses...\n", 29);
+
+    } else if (strcmp(buffer, "2") == 0) {
+        write(STDOUT_FILENO, "Adding course...\n", 17);
+    } else if (strcmp(buffer, "3") == 0) {
+        write(STDOUT_FILENO, "Removing course...\n", 19);
+    } else if (strcmp(buffer, "4") == 0) {
+        write(STDOUT_FILENO, "Viewing enrolled students...\n", 30);
+    } else if (strcmp(buffer, "5") == 0) {
+        write(STDOUT_FILENO, "Changing password...\n", 21);
+    } else if (strcmp(buffer, "6") == 0) {
+        write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
+        close(sock);
+        exit(0);
+    } else {
+        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
+    }
+}
+
 void handle_student_input(int sock, char *username, char *password) {
     // Display menu options
     write(STDOUT_FILENO, "1. View Courses\n", 16);
@@ -169,16 +242,12 @@ void handle_student_input(int sock, char *username, char *password) {
     if (strcmp(buffer, "1") == 0) {
         view_student_details(sock, username);
     } else if (strcmp(buffer, "2") == 0) {
-        write(sock, buffer, strlen(buffer));
         write(STDOUT_FILENO, "Enrolling in course...\n", 24);
     } else if (strcmp(buffer, "3") == 0) {
-        write(sock, buffer, strlen(buffer));
         write(STDOUT_FILENO, "Dropping course...\n", 20);
     } else if (strcmp(buffer, "4") == 0) {
-        write(sock, buffer, strlen(buffer));
-        write(STDOUT_FILENO, "Viewing enrollments...\n", 24);
+        view_student_details(sock, username);
     } else if (strcmp(buffer, "5") == 0) {
-        write(sock, buffer, strlen(buffer));
         write(STDOUT_FILENO, "Changing password...\n", 21);
     } else if (strcmp(buffer, "6") == 0) {
         write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
