@@ -8,17 +8,6 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-
-#define BUFFER_SIZE 1024
-
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-
 int student_exists(const char *received_username) {
     int fd = open("students.txt", O_RDONLY);
     if (fd < 0) {
@@ -175,9 +164,9 @@ void add_faculty(int sock) {
     write(STDOUT_FILENO, "\n", 1);
 
 
-    // Construct student entry
+    // Construct faculty entry
     char entry[BUFFER_SIZE];
-    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s: :1\n", received_username, received_password);
+    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s:x\n", received_username, received_password);
 
     // Open students.txt in append mode, create if doesn't exist
     int fd = open("faculties.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -216,8 +205,6 @@ void add_course(int sock) {
 
     read(sock, course_name, BUFFER_SIZE);
     write(STDOUT_FILENO, "Received course: ", 17);
-
-    
 }
 
 void view_student_details(int sock) {
@@ -271,6 +258,55 @@ void view_student_details(int sock) {
 
     if (!found) {
         char *err = "Student not found.\n";
+        write(STDERR_FILENO, err, strlen(err));
+    }
+
+    close(fd);
+}
+
+void view_faculty_details(int sock){
+    // Open faculties.txt in read mode
+    int fd = open("faculties.txt", O_RDONLY);
+    if (fd < 0) {
+        char *err = "Error opening faculties.txt\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, bytes_read;
+    char details[BUFFER_SIZE] = {0};
+
+    while ((bytes_read = read(fd, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 1) {
+            line[idx] = '\0'; // terminate the string
+            idx = 0;
+
+            // Extract username (before first colon)
+            char temp_line[BUFFER_SIZE];
+            strcpy(temp_line, line); // to preserve original
+            char *token = strtok(temp_line, ":"); // username
+
+            sprintf(details, "Faculty: %s\n", token);
+            // Skip password
+            token = strtok(NULL, ":");
+            // Extract courses
+            token = strtok(NULL, ":");
+            if (strcmp(token, "x") != 0){
+                strcat(details, token);
+                strcat(details, "\n");
+            } else {
+                strcat(details, "No courses found.\n");
+            }
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    if (strlen(details) > 0) {
+        write(sock, details, strlen(details));
+    } else {
+        char *err = "No faculty details found.\n";
         write(STDERR_FILENO, err, strlen(err));
     }
 
@@ -409,12 +445,48 @@ int run_professor_menu(int sock) {
     write(STDOUT_FILENO, received_password, strlen(received_password));
     write(STDOUT_FILENO, "\n", 1);
 
-    if (faculty_exists(received_username)){
-        write(STDOUT_FILENO, "Faculty exists.\n", 16);
-    }
-    else {
+    if (!faculty_exists(received_username)){
         write(STDOUT_FILENO, "Faculty does not exist.\n", 24);
+        write(sock, "Faculty not found.\n", 20);
         return 1;
+    }
+
+    if (validate_faculty(received_username, received_password)) {
+        write(STDOUT_FILENO, "Faculty login successful.\n", 26);
+        write(sock, "Faculty login successful.\n", 26);
+    } else {
+        write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+        write(sock, "Invalid credentials.\n", 21);
+        return 1;
+    }
+
+    char task_choice;
+    read(sock, &task_choice, sizeof(task_choice));
+    printf("Received task choice: %c\n", task_choice);
+
+    // Process task choice
+    if (task_choice == '1') {
+        // View courses
+        view_faculty_details(sock);
+    } else if (task_choice == '2') {
+        // Add course
+        add_course(sock);
+    } else if (task_choice == '3') {
+        // Remove course
+        write(STDOUT_FILENO, "Removing course...\n", 20);
+    } else if (task_choice == '4') {
+        // View enrolled students
+        write(STDOUT_FILENO, "Viewing enrolled students...\n", 30);
+    } else if (task_choice == '5') {
+        // Change password
+        write(STDOUT_FILENO, "Changing password...\n", 21);
+    } else if (task_choice == '9') {
+        char *msg = "Logging out and exiting...\n";
+        write(sock, msg, strlen(msg));
+        close(sock);
+        return 1;
+    } else {
+        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
     }
 
     return 0;
@@ -517,7 +589,7 @@ int main() {
         perror("accept failed");
         exit(EXIT_FAILURE);
     }
-    printf("Server connected to client.\n");
+    printf("Client connected.\n");
 
     // Receive role input from client
     char role_input;
