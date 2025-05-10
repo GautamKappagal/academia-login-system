@@ -268,6 +268,42 @@ void view_student_details(int sock) {
     close(fd);
 }
 
+int validate_student(const char *username, const char *password) {
+    int fd = open("students.txt", O_RDONLY);
+    if (fd < 0) {
+        write(STDERR_FILENO, "Error opening students.txt\n", 28);
+        return 0; // Assume doesn't exist if file can't be opened
+    }
+
+    char buffer[1];
+    char line[BUFFER_SIZE];
+    int idx = 0;
+    int bytes_read;
+
+    while ((bytes_read = read(fd, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 1) {
+            line[idx] = '\0'; // terminate the string
+
+            // Extract username and password
+            char *token = strtok(line, ":");
+            if (token && strcmp(token, username) == 0) {
+                token = strtok(NULL, ":");
+                if (token && strcmp(token, password) == 0) {
+                    close(fd);
+                    return 1; // found match
+                }
+            }
+
+            idx = 0; // reset for next line
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    close(fd);
+    return 0; // not found
+}
+
 int run_admin_menu(int sock){
     // Receive task choice from client
     char task_choice;
@@ -336,12 +372,45 @@ int run_student_menu(int sock) {
     write(STDOUT_FILENO, received_password, strlen(received_password));
     write(STDOUT_FILENO, "\n", 1);
 
-    if (student_exists(received_username)){
-        write(STDOUT_FILENO, "Student exists.\n", 16);
-    }
-    else {
+    if (!student_exists(received_username)){
         write(STDOUT_FILENO, "Student does not exist.\n", 24);
+        write(sock, "Student not found.\n", 20);
         return 1;
+    }
+
+    if (validate_student(received_username, received_password)) {
+        write(STDOUT_FILENO, "Student login successful.\n", 26);
+        write(sock, "Student login successful.\n", 26);
+    } else {
+        write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+        write(sock, "Invalid credentials.\n", 21);
+        return 1;
+    }
+
+    char task_choice;
+    read(sock, &task_choice, sizeof(task_choice));
+    printf("Received task choice: %c\n", task_choice);
+
+    // Process task choice
+    if (task_choice == '1') {
+        // View courses
+        view_student_details(sock);
+    } else if (task_choice == '2') {
+        // Enroll in course
+        write(STDOUT_FILENO, "Enrolling in course...\n", 23);
+    } else if (task_choice == '3') {
+        // Drop course
+        write(STDOUT_FILENO, "Dropping course...\n", 20);
+    } else if (task_choice == '4') {
+        // View enrolled courses
+        write(STDOUT_FILENO, "Viewing enrolled courses...\n", 28);
+    } else if (task_choice == '9') {
+        char *msg = "Logging out and exiting...\n";
+        write(sock, msg, strlen(msg));
+        close(sock);
+        return 1;
+    } else {
+        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
     }
 
     return 0;
@@ -404,7 +473,11 @@ int main() {
         int ret = run_professor_menu(sock);
     } else if (role_input == '3') {
         // Student menu
-        // run_student_menu(sock);
+        int ret = run_student_menu(sock);
+    } else if (role_input == '9') {
+        write(STDOUT_FILENO, "Client disconnected.\n", 23);
+        close(sock);
+        return 0; // Exit after client disconnect
     } else {
         write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
     }

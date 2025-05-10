@@ -74,19 +74,9 @@ void add_faculty(int sock) {
     }
 }
 
-void view_student_details(int sock) {
-    char username[BUFFER_SIZE] = {0};
-
-    // Get student username
-    write(STDOUT_FILENO, "Enter student username: ", 25);
-    int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
-    if (ulen > 0 && username[ulen - 1] == '\n') {
-        username[ulen - 1] = '\0';
-    }
-
+void view_student_details(int sock, char *username) {
     // Send student ID to server
     write(sock, username, BUFFER_SIZE);
-
     // Here you would typically wait for a response from the server
     char response[BUFFER_SIZE] = {0};
     read(sock, response, BUFFER_SIZE);
@@ -125,7 +115,16 @@ void handle_admin_input(int sock, char *buffer) {
         add_student(sock);
     } else if (strcmp(buffer, "2") == 0) {
         write(sock, buffer, strlen(buffer));
-        view_student_details(sock);
+
+        char username[BUFFER_SIZE] = {0};
+        // Get student username
+        write(STDOUT_FILENO, "Enter student username: ", 25);
+        int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
+        if (ulen > 0 && username[ulen - 1] == '\n') {
+            username[ulen - 1] = '\0';
+        }
+        // Call function to view student details
+        view_student_details(sock, username);
     } else if (strcmp(buffer, "3") == 0) {
         write(STDOUT_FILENO, "Adding faculty...\n", 18);
     } else if (strcmp(buffer, "4") == 0) {
@@ -139,6 +138,49 @@ void handle_admin_input(int sock, char *buffer) {
     } else if (strcmp(buffer, "8") == 0) {
         write(STDOUT_FILENO, "Modifying faculty details...\n", 30);
     } else if (strcmp(buffer, "9") == 0) {
+        write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
+        close(sock);
+        exit(0);
+    } else {
+        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
+    }
+}
+
+void handle_student_input(int sock, char *username, char *password) {
+    // Display menu options
+    write(STDOUT_FILENO, "1. View Courses\n", 16);
+    write(STDOUT_FILENO, "2. Enroll (pick) New Course\n", 28);
+    write(STDOUT_FILENO, "3. Drop Course\n", 16);
+    write(STDOUT_FILENO, "4. View Enrolled Course Details\n", 33);
+    write(STDOUT_FILENO, "5. Change Password\n", 20);
+    write(STDOUT_FILENO, "6. Logout and Exit\n", 20);
+
+    // Take user choice
+    char buffer[BUFFER_SIZE] = {0};
+    write(STDOUT_FILENO, "Enter your choice: ", 19);
+    scanf("%s", buffer);
+    // Clear the input buffer
+    while (getchar() != '\n');  // This consumes the newline character
+
+    // Send choice to server
+    write(sock, buffer, strlen(buffer));
+
+    // Handle user choice
+    if (strcmp(buffer, "1") == 0) {
+        view_student_details(sock, username);
+    } else if (strcmp(buffer, "2") == 0) {
+        write(sock, buffer, strlen(buffer));
+        write(STDOUT_FILENO, "Enrolling in course...\n", 24);
+    } else if (strcmp(buffer, "3") == 0) {
+        write(sock, buffer, strlen(buffer));
+        write(STDOUT_FILENO, "Dropping course...\n", 20);
+    } else if (strcmp(buffer, "4") == 0) {
+        write(sock, buffer, strlen(buffer));
+        write(STDOUT_FILENO, "Viewing enrollments...\n", 24);
+    } else if (strcmp(buffer, "5") == 0) {
+        write(sock, buffer, strlen(buffer));
+        write(STDOUT_FILENO, "Changing password...\n", 21);
+    } else if (strcmp(buffer, "6") == 0) {
         write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
         close(sock);
         exit(0);
@@ -251,6 +293,19 @@ int main() {
 
         write(sock, username, BUFFER_SIZE);
         write(sock, password, BUFFER_SIZE);
+
+        char response[BUFFER_SIZE] = {0};
+        read(sock, response, BUFFER_SIZE);
+
+        write(STDOUT_FILENO, response, strlen(response));
+        if (strcmp(response, "Student login successful.\n") == 0) {
+            while(1){
+                handle_student_input(sock, username, password);
+            }
+        } else {
+            close(sock);
+            return 0;
+        }
     } else {
         write(STDOUT_FILENO, "Invalid role selected.\n", 23);
     }
