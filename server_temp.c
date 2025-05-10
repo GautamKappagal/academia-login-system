@@ -200,11 +200,250 @@ void add_faculty(int sock) {
     write(sock, msg, strlen(msg));
 }
 
-void add_course(int sock) {
+void add_course(int sock, const char* faculty_username) {
     char course_name[BUFFER_SIZE] = {0};
-
     read(sock, course_name, BUFFER_SIZE);
-    write(STDOUT_FILENO, "Received course: ", 17);
+
+    // Print received course
+    write(STDOUT_FILENO, "Received course code: ", 23);
+    write(STDOUT_FILENO, course_name, strlen(course_name));
+    write(STDOUT_FILENO, "\n", 1);
+
+    int fd_orig = open("faculties.txt", O_RDONLY);
+    int fd_temp = open("faculties_tmp.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fd_orig < 0 || fd_temp < 0) {
+        char *err = "Error opening files\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(fd_temp, F_SETLKW, &lock);
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, bytes_read;
+    int found = 0;
+
+    while ((bytes_read = read(fd_orig, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 2) {
+            line[idx] = '\0';
+
+            char copy[BUFFER_SIZE];
+            strcpy(copy, line);
+            char *username = strtok(copy, ":");
+            char *password = strtok(NULL, ":");
+            char *courses = strtok(NULL, ":");
+
+            if (username && strcmp(username, faculty_username) == 0) {
+                found = 1;
+                // check if x or existing courses
+                if (!courses || strcmp(courses, "x") == 0) {
+                    snprintf(line, BUFFER_SIZE, "%s:%s:%s", username, password, course_name);
+                } else {
+                    // append course with comma
+                    char new_courses[BUFFER_SIZE];
+                    snprintf(new_courses, BUFFER_SIZE, "%s,%s", courses, course_name);
+                    snprintf(line, BUFFER_SIZE, "%s:%s:%s", username, password, new_courses);
+                }
+            }
+
+            write(fd_temp, line, strlen(line));
+            write(fd_temp, "\n", 1);
+            idx = 0;
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    // Handle last line without newline
+    if (idx > 0) {
+        line[idx] = '\0';
+        char copy[BUFFER_SIZE];
+        strcpy(copy, line);
+        char *username = strtok(copy, ":");
+        char *password = strtok(NULL, ":");
+        char *courses = strtok(NULL, ":");
+
+        if (username && strcmp(username, faculty_username) == 0) {
+            found = 1;
+            if (!courses || strcmp(courses, "x") == 0) {
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s", username, password, course_name);
+            } else {
+                char new_courses[BUFFER_SIZE];
+                snprintf(new_courses, BUFFER_SIZE, "%s,%s", courses, course_name);
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s", username, password, new_courses);
+            }
+        }
+        write(fd_temp, line, strlen(line));
+        write(fd_temp, "\n", 1);
+    }
+
+    lock.l_type = F_UNLCK;
+    fcntl(fd_temp, F_SETLK, &lock);
+
+    close(fd_orig);
+    close(fd_temp);
+
+    // Replace old file
+    rename("faculties_tmp.txt", "faculties.txt");
+
+    if (found) {
+        char *msg = "Course added successfully.\n";
+        write(sock, msg, strlen(msg));
+    } else {
+        char *msg = "Faculty not found.\n";
+        write(sock, msg, strlen(msg));
+    }
+}
+
+void enroll_course(int sock, const char *student_username) {
+    char course_name[BUFFER_SIZE] = {0};
+    read(sock, course_name, BUFFER_SIZE);
+
+    // Check if course exists in faculties.txt
+    int fd_fac = open("faculties.txt", O_RDONLY);
+    if (fd_fac < 0) {
+        char *err = "Error opening faculties.txt\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, found_course = 0;
+    while (read(fd_fac, buffer, 1) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 2) {
+            line[idx] = '\0';
+
+            // Get course section (after 2nd colon)
+            int colon_count = 0, i = 0;
+            while (line[i] != '\0') {
+                if (line[i] == ':') colon_count++;
+                if (colon_count == 2) break;
+                i++;
+            }
+
+            if (colon_count == 2) {
+                char *courses = line + i + 1;
+                if (strcmp(courses, "x") != 0) {
+                    char *token = strtok(courses, ",");
+                    while (token) {
+                        if (strcmp(token, course_name) == 0) {
+                            found_course = 1;
+                            break;
+                        }
+                        token = strtok(NULL, ",");
+                    }
+                }
+            }
+
+            if (found_course) break;
+            idx = 0;
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    close(fd_fac);
+
+    if (!found_course) {
+        char *msg = "No such course found.\n";
+        write(sock, msg, strlen(msg));
+        return;
+    }
+
+    // Update students.txt
+    int fd_stu = open("students.txt", O_RDONLY);
+    int fd_tmp = open("students_tmp.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fd_stu < 0 || fd_tmp < 0) {
+        char *err = "Error opening students.txt\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(fd_tmp, F_SETLKW, &lock);
+
+    idx = 0;
+    int updated = 0;
+    while (read(fd_stu, buffer, 1) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 2) {
+            line[idx] = '\0';
+
+            char copy[BUFFER_SIZE];
+            strcpy(copy, line);
+            char *username = strtok(copy, ":");
+            char *password = strtok(NULL, ":");
+            char *courses = strtok(NULL, ":");
+
+            if (username && strcmp(username, student_username) == 0) {
+                updated = 1;
+                if (!courses || strcmp(courses, "x") == 0) {
+                    snprintf(line, BUFFER_SIZE, "%s:%s:%s:1", username, password, course_name);
+                } else {
+                    char new_courses[BUFFER_SIZE];
+                    snprintf(new_courses, BUFFER_SIZE, "%s,%s", courses, course_name);
+                    snprintf(line, BUFFER_SIZE, "%s:%s:%s:1", username, password, new_courses);
+                }
+            }
+
+            write(fd_tmp, line, strlen(line));
+            write(fd_tmp, "\n", 1);
+            idx = 0;
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    // Handle last line
+    if (idx > 0) {
+        line[idx] = '\0';
+        char copy[BUFFER_SIZE];
+        strcpy(copy, line);
+        char *username = strtok(copy, ":");
+        char *password = strtok(NULL, ":");
+        char *courses = strtok(NULL, ":");
+
+        if (username && strcmp(username, student_username) == 0) {
+            updated = 1;
+            if (!courses || strcmp(courses, "x") == 0) {
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s:1", username, password, course_name);
+            } else {
+                char new_courses[BUFFER_SIZE];
+                snprintf(new_courses, BUFFER_SIZE, "%s,%s", courses, course_name);
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s:1", username, password, new_courses);
+            }
+        }
+
+        write(fd_tmp, line, strlen(line));
+        write(fd_tmp, "\n", 1);
+    }
+
+    lock.l_type = F_UNLCK;
+    fcntl(fd_tmp, F_SETLK, &lock);
+
+    close(fd_stu);
+    close(fd_tmp);
+    rename("students_tmp.txt", "students.txt");
+
+    if (updated) {
+        char *msg = "Enrolled successfully.\n";
+        write(sock, msg, strlen(msg));
+    } else {
+        char *msg = "Student not found.\n";
+        write(sock, msg, strlen(msg));
+    }
 }
 
 void view_student_details(int sock) {
@@ -470,7 +709,7 @@ int run_professor_menu(int sock) {
         view_faculty_details(sock);
     } else if (task_choice == '2') {
         // Add course
-        add_course(sock);
+        add_course(sock, received_username);
     } else if (task_choice == '3') {
         // Remove course
         write(STDOUT_FILENO, "Removing course...\n", 20);
@@ -532,7 +771,7 @@ int run_student_menu(int sock) {
         view_student_details(sock);
     } else if (task_choice == '2') {
         // Enroll in course
-        write(STDOUT_FILENO, "Enrolling in course...\n", 23);
+        enroll_course(sock, received_username);
     } else if (task_choice == '3') {
         // Drop course
         write(STDOUT_FILENO, "Dropping course...\n", 20);

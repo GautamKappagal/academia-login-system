@@ -107,10 +107,9 @@ void view_faculty_details(int sock, char *username) {
 
 void add_course(int sock) {
     char course_name[BUFFER_SIZE] = {0};
-    char faculty_name[BUFFER_SIZE] = {0};
 
     // Get course name
-    write(STDOUT_FILENO, "Enter course name: ", 19);
+    write(STDOUT_FILENO, "Enter course code: ", 19);
     int clen = read(STDIN_FILENO, course_name, BUFFER_SIZE);
     if (clen > 0 && course_name[clen - 1] == '\n') {
         course_name[clen - 1] = '\0';
@@ -119,6 +118,24 @@ void add_course(int sock) {
     write(sock, course_name, BUFFER_SIZE);
 
     // Read whether the course was added successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
+void enroll_course(int sock) {
+    char course_name[BUFFER_SIZE] = {0};
+
+    // Get course name
+    write(STDOUT_FILENO, "Enter course code: ", 19);
+    int clen = read(STDIN_FILENO, course_name, BUFFER_SIZE);
+    if (clen > 0 && course_name[clen - 1] == '\n') {
+        course_name[clen - 1] = '\0';
+    }
+
+    write(sock, course_name, BUFFER_SIZE);
+
+    // Read whether the course was enrolled successfully
     char response[BUFFER_SIZE] = {0};
     read(sock, response, BUFFER_SIZE);
     write(STDOUT_FILENO, response, strlen(response));
@@ -195,9 +212,9 @@ void handle_admin_input(int sock, char *buffer) {
 
 void handle_faculty_input(int sock, char *username, char *password) {
     // Display menu options
-    write(STDOUT_FILENO, "1. View Offering Courses\n", 25);
+    write(STDOUT_FILENO, "1. View Offering Courses\n", 26);
     write(STDOUT_FILENO, "2. Add New Course\n", 19);
-    write(STDOUT_FILENO, "3. Remove Course from Catalog\n", 34);
+    write(STDOUT_FILENO, "3. Remove Course from Catalog\n", 31);
     write(STDOUT_FILENO, "4. Update Course Details\n", 26);
     write(STDOUT_FILENO, "5. Change Password\n", 20);
     write(STDOUT_FILENO, "6. Logout and Exit\n", 20);
@@ -216,7 +233,7 @@ void handle_faculty_input(int sock, char *username, char *password) {
     if (strcmp(buffer, "1") == 0) {
         view_faculty_details(sock, username);
     } else if (strcmp(buffer, "2") == 0) {
-        write(STDOUT_FILENO, "Adding course...\n", 17);
+        add_course(sock);
     } else if (strcmp(buffer, "3") == 0) {
         write(STDOUT_FILENO, "Removing course...\n", 19);
     } else if (strcmp(buffer, "4") == 0) {
@@ -255,7 +272,7 @@ void handle_student_input(int sock, char *username, char *password) {
     if (strcmp(buffer, "1") == 0) {
         view_student_details(sock, username);
     } else if (strcmp(buffer, "2") == 0) {
-        write(STDOUT_FILENO, "Enrolling in course...\n", 24);
+        enroll_course(sock);
     } else if (strcmp(buffer, "3") == 0) {
         write(STDOUT_FILENO, "Dropping course...\n", 20);
     } else if (strcmp(buffer, "4") == 0) {
