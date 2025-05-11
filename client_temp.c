@@ -205,6 +205,51 @@ void activate_student(int sock) {
     write(STDOUT_FILENO, response, strlen(response));
 }
 
+void block_student(int sock) {
+    char username[BUFFER_SIZE] = {0};
+
+    // Get student username
+    write(STDOUT_FILENO, "Enter student username: ", 25);
+    int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
+    if (ulen > 0 && username[ulen - 1] == '\n') {
+        username[ulen - 1] = '\0';
+    }
+
+    write(sock, username, BUFFER_SIZE);
+
+    // Read whether the student was blocked successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
+void update_course(int sock) {
+    char old_course[BUFFER_SIZE] = {0};
+    char new_course[BUFFER_SIZE] = {0};
+
+    // Get old course name
+    write(STDOUT_FILENO, "Enter old course code: ", 23);
+    int clen = read(STDIN_FILENO, old_course, BUFFER_SIZE);
+    if (clen > 0 && old_course[clen - 1] == '\n') {
+        old_course[clen - 1] = '\0';
+    }
+
+    // Get new course name
+    write(STDOUT_FILENO, "Enter new course code: ", 23);
+    clen = read(STDIN_FILENO, new_course, BUFFER_SIZE);
+    if (clen > 0 && new_course[clen - 1] == '\n') {
+        new_course[clen - 1] = '\0';
+    }
+
+    write(sock, old_course, BUFFER_SIZE);
+    write(sock, new_course, BUFFER_SIZE);
+
+    // Read whether the course was updated successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
 void change_password(int sock){
     char new_password[BUFFER_SIZE] = {0};
 
@@ -232,9 +277,7 @@ void handle_admin_input(int sock, char *buffer) {
     write(STDOUT_FILENO, "4. View Faculty Details\n", 25);
     write(STDOUT_FILENO, "5. Activate Student\n", 20);
     write(STDOUT_FILENO, "6. Block Student\n", 18);
-    write(STDOUT_FILENO, "7. Modify Student Details\n", 26);
-    write(STDOUT_FILENO, "8. Modify Faculty Details\n", 26);
-    write(STDOUT_FILENO, "9. Logout and Exit\n", 20);
+    write(STDOUT_FILENO, "7. Logout and Exit\n", 20);
 
     // Take user choice
     write(STDOUT_FILENO, "Enter your choice: ", 19);
@@ -262,16 +305,18 @@ void handle_admin_input(int sock, char *buffer) {
     } else if (strcmp(buffer, "3") == 0) {
         add_faculty(sock);
     } else if (strcmp(buffer, "4") == 0) {
-        write(STDOUT_FILENO, "Viewing faculty details...\n", 28);
+        char username[BUFFER_SIZE] = {0};
+        write(STDOUT_FILENO, "Enter faculty username: ", 25);
+        len = read(STDIN_FILENO, username, BUFFER_SIZE);
+        if (len > 0 && username[len - 1] == '\n') {
+            username[len - 1] = '\0';
+        }
+        view_faculty_details(sock, username);
     } else if (strcmp(buffer, "5") == 0) {
         activate_student(sock);
     } else if (strcmp(buffer, "6") == 0) {
-        write(STDOUT_FILENO, "Blocking student...\n", 21);
+        block_student(sock);
     } else if (strcmp(buffer, "7") == 0) {
-        write(STDOUT_FILENO, "Modifying student details...\n", 30);
-    } else if (strcmp(buffer, "8") == 0) {
-        write(STDOUT_FILENO, "Modifying faculty details...\n", 30);
-    } else if (strcmp(buffer, "9") == 0) {
         write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
         close(sock);
         exit(0);
@@ -311,7 +356,7 @@ void handle_faculty_input(int sock, char *username, char *password) {
     } else if (strcmp(buffer, "3") == 0) {
         delete_course(sock);
     } else if (strcmp(buffer, "4") == 0) {
-        write(STDOUT_FILENO, "Viewing enrolled students...\n", 30);
+        update_course(sock);
     } else if (strcmp(buffer, "5") == 0) {
         change_password(sock);
     } else if (strcmp(buffer, "6") == 0) {
