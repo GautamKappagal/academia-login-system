@@ -305,6 +305,11 @@ void enroll_course(int sock, const char *student_username) {
     char course_name[BUFFER_SIZE] = {0};
     read(sock, course_name, BUFFER_SIZE);
 
+    // Print received course
+    write(STDOUT_FILENO, "Received course code: ", 23);
+    write(STDOUT_FILENO, course_name, strlen(course_name));
+    write(STDOUT_FILENO, "\n", 1);
+
     // Check if course exists in faculties.txt
     int fd_fac = open("faculties.txt", O_RDONLY);
     if (fd_fac < 0) {
@@ -568,6 +573,57 @@ void delete_course(int sock, const char* username_to_edit, const char* filename)
     write(sock, msg, strlen(msg));
 }
 
+void view_all_courses(int sock) {
+    int fd = open("faculties.txt", O_RDONLY);
+    if (fd < 0) {
+        char *err = "Error opening faculties.txt\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, bytes_read;
+
+    char output[BUFFER_SIZE * 10] = ""; // Buffer to collect all courses
+
+    while ((bytes_read = read(fd, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 1) {
+            line[idx] = '\0'; // terminate line
+            idx = 0;
+
+            char temp_line[BUFFER_SIZE];
+            strcpy(temp_line, line);
+
+            // Format: username:password:course1,course2,...
+            char *username = strtok(temp_line, ":");
+            char *password = strtok(NULL, ":");
+            char *courses = strtok(NULL, ":");
+
+            if (username && password && courses) {
+                char *course = strtok(courses, ",");
+                while (course) {
+                    strcat(output, "Course: ");
+                    strcat(output, course);
+                    strcat(output, " (Faculty: ");
+                    strcat(output, username);
+                    strcat(output, ")\n");
+                    course = strtok(NULL, ",");
+                }
+            }
+
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    if (strlen(output) == 0) {
+        strcpy(output, "No courses available.\n");
+    }
+
+    write(sock, output, strlen(output));
+    close(fd);
+}
+
 void view_student_details(int sock) {
     char username[BUFFER_SIZE] = {0};
 
@@ -763,6 +819,67 @@ void change_password(int sock, char role, const char *username) {
     write(sock, msg, strlen(msg));
 }
 
+void activate(int sock, const char *username) {
+    int fd = open("students.txt", O_RDONLY);
+    if (fd < 0) {
+        perror("Error opening students.txt");
+        return;
+    }
+
+    int temp_fd = open("students_temp.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (temp_fd < 0) {
+        perror("Error creating temporary file");
+        close(fd);
+        return;
+    }
+
+    write(STDOUT_FILENO, "Received username: ", 19);
+    write(STDOUT_FILENO, username, strlen(username));
+    write(STDOUT_FILENO, "\n", 1);
+
+    char ch, line[BUFFER_SIZE];
+    int idx = 0, bytes_read, found = 0;
+
+    while ((bytes_read = read(fd, &ch, 1)) > 0) {
+        if (ch == '\n' || idx >= BUFFER_SIZE - 1) {
+            line[idx] = '\0';
+            idx = 0;
+
+            char line_copy[BUFFER_SIZE];
+            strcpy(line_copy, line);
+
+            char *token = strtok(line, ":");
+            if (token && strcmp(token, username) == 0) {
+                found = 1;
+                char *password = strtok(NULL, ":");
+                char *courses = strtok(NULL, ":");
+
+                // Write updated line to temp file with active flag = 1
+                dprintf(temp_fd, "%s:%s:%s:1\n", username, password, courses);
+            } else {
+                // Write original line to temp file
+                dprintf(temp_fd, "%s\n", line_copy);
+            }
+        } else {
+            line[idx++] = ch;
+        }
+    }
+
+    close(fd);
+    close(temp_fd);
+
+    if (found) {
+        rename("students_temp.txt", "students.txt");
+    } else {
+        unlink("students_temp.txt");
+        write(STDERR_FILENO, "Student not found.\n", 20);
+    }
+
+    char *msg = found ? "Student activated successfully.\n"
+                      : "Student not found.\n";
+    write(sock, msg, strlen(msg));
+}
+
 int validate_student(const char *username, const char *password) {
     int fd = open("students.txt", O_RDONLY);
     if (fd < 0) {
@@ -857,6 +974,9 @@ int run_admin_menu(int sock){
     }
     else if (task_choice == '5') {
         write(STDOUT_FILENO, "Activating student...\n", 22);
+        char username[BUFFER_SIZE] = {0};
+        read(sock, username, BUFFER_SIZE);
+        activate(sock, username);
     }
     else if (task_choice == '6') {
         write(STDOUT_FILENO, "Blocking student...\n", 21);
@@ -921,7 +1041,7 @@ int run_student_menu(int sock, char role, const char *received_username) {
     // Process task choice
     if (task_choice == '1') {
         // View courses
-        view_student_details(sock);
+        view_all_courses(sock);
     } else if (task_choice == '2') {
         // Enroll in course
         enroll_course(sock, received_username);
@@ -930,8 +1050,7 @@ int run_student_menu(int sock, char role, const char *received_username) {
         delete_course(sock, received_username, "students.txt");
     } else if (task_choice == '4') {
         // View enrolled courses
-        write(STDOUT_FILENO, "Viewing enrolled courses...\n", 28);
-
+        view_student_details(sock);
     } else if (task_choice == '5') {
         // Change password
         change_password(sock, role, received_username);

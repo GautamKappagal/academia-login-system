@@ -74,6 +74,20 @@ void add_faculty(int sock) {
     }
 }
 
+void view_all_courses(int sock) {
+    // Here you would typically send a request to the server to get the list of courses
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+
+    if (strcmp(response, "No courses available.\n") == 0) {
+        write(STDERR_FILENO, response, strlen(response));
+    } else {
+        write(STDOUT_FILENO, "Available courses:\n", 19);
+        write(STDOUT_FILENO, response, strlen(response));
+        write(STDOUT_FILENO, "\n", 1);
+    }
+}
+
 void view_student_details(int sock, char *username) {
     // Send student ID to server
     write(sock, username, BUFFER_SIZE);
@@ -173,6 +187,24 @@ void view_courses(int sock) {
     }
 }
 
+void activate_student(int sock) {
+    char username[BUFFER_SIZE] = {0};
+
+    // Get student username
+    write(STDOUT_FILENO, "Enter student username: ", 25);
+    int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
+    if (ulen > 0 && username[ulen - 1] == '\n') {
+        username[ulen - 1] = '\0';
+    }
+
+    write(sock, username, BUFFER_SIZE);
+
+    // Read whether the student was activated successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
 void change_password(int sock){
     char new_password[BUFFER_SIZE] = {0};
 
@@ -232,7 +264,7 @@ void handle_admin_input(int sock, char *buffer) {
     } else if (strcmp(buffer, "4") == 0) {
         write(STDOUT_FILENO, "Viewing faculty details...\n", 28);
     } else if (strcmp(buffer, "5") == 0) {
-        write(STDOUT_FILENO, "Activating student...\n", 22);
+        activate_student(sock);
     } else if (strcmp(buffer, "6") == 0) {
         write(STDOUT_FILENO, "Blocking student...\n", 21);
     } else if (strcmp(buffer, "7") == 0) {
@@ -315,7 +347,7 @@ void handle_student_input(int sock, char *username, char *password) {
 
     // Handle user choice
     if (strcmp(buffer, "1") == 0) {
-        view_student_details(sock, username);
+        view_all_courses(sock);
     } else if (strcmp(buffer, "2") == 0) {
         enroll_course(sock);
     } else if (strcmp(buffer, "3") == 0) {
