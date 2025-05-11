@@ -141,6 +141,24 @@ void enroll_course(int sock) {
     write(STDOUT_FILENO, response, strlen(response));
 }
 
+void delete_course(int sock) {
+    char course_name[BUFFER_SIZE] = {0};
+
+    // Get course name
+    write(STDOUT_FILENO, "Enter course code: ", 19);
+    int clen = read(STDIN_FILENO, course_name, BUFFER_SIZE);
+    if (clen > 0 && course_name[clen - 1] == '\n') {
+        course_name[clen - 1] = '\0';
+    }
+
+    write(sock, course_name, BUFFER_SIZE);
+
+    // Read whether the course was deleted successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
 void view_courses(int sock) {
     // Here you would typically send a request to the server to get the list of courses
     char response[BUFFER_SIZE] = {0};
@@ -155,7 +173,25 @@ void view_courses(int sock) {
     }
 }
 
-// Function to handle user input and display menu
+void change_password(int sock){
+    char new_password[BUFFER_SIZE] = {0};
+
+    // Get new password
+    write(STDOUT_FILENO, "Enter new password: ", 20);
+    int clen = read(STDIN_FILENO, new_password, BUFFER_SIZE);
+    if (clen > 0 && new_password[clen - 1] == '\n') {
+        new_password[clen - 1] = '\0';
+    }
+
+    write(sock, new_password, BUFFER_SIZE);
+
+    // Read whether the password was changed successfully
+    char response[BUFFER_SIZE] = {0};
+    read(sock, response, BUFFER_SIZE);
+    write(STDOUT_FILENO, response, strlen(response));
+}
+
+// Handle user input for admin, faculty, or student
 void handle_admin_input(int sock, char *buffer) {
     // Display menu options
     write(STDOUT_FILENO, "1. Add Student\n", 15);
@@ -170,24 +206,26 @@ void handle_admin_input(int sock, char *buffer) {
 
     // Take user choice
     write(STDOUT_FILENO, "Enter your choice: ", 19);
-    scanf("%s", buffer);
-    // Clear the input buffer
-    while (getchar() != '\n');  // This consumes the newline character
+
+    // Clear buffer and read user input
+    memset(buffer, 0, BUFFER_SIZE);
+    int len = read(STDIN_FILENO, buffer, BUFFER_SIZE);
+    if (len > 0 && buffer[len - 1] == '\n') {
+        buffer[len - 1] = '\0';  // Remove the newline character
+    }
 
     write(sock, buffer, strlen(buffer));
 
-    // Handle user choice
+    // Handle user choice based on input
     if (strcmp(buffer, "1") == 0) {
         add_student(sock);
     } else if (strcmp(buffer, "2") == 0) {
         char username[BUFFER_SIZE] = {0};
-        // Get student username
         write(STDOUT_FILENO, "Enter student username: ", 25);
-        int ulen = read(STDIN_FILENO, username, BUFFER_SIZE);
-        if (ulen > 0 && username[ulen - 1] == '\n') {
-            username[ulen - 1] = '\0';
+        len = read(STDIN_FILENO, username, BUFFER_SIZE);
+        if (len > 0 && username[len - 1] == '\n') {
+            username[len - 1] = '\0';
         }
-        // Call function to view student details
         view_student_details(sock, username);
     } else if (strcmp(buffer, "3") == 0) {
         add_faculty(sock);
@@ -222,9 +260,13 @@ void handle_faculty_input(int sock, char *username, char *password) {
     // Take user choice
     char buffer[BUFFER_SIZE] = {0};
     write(STDOUT_FILENO, "Enter your choice: ", 19);
-    scanf("%s", buffer);
-    // Clear the input buffer
-    while (getchar() != '\n');  // This consumes the newline character
+
+    // Clear buffer and read user input
+    memset(buffer, 0, BUFFER_SIZE);
+    int len = read(STDIN_FILENO, buffer, BUFFER_SIZE);
+    if (len > 0 && buffer[len - 1] == '\n') {
+        buffer[len - 1] = '\0';  // Remove the newline character
+    }
 
     // Send choice to server
     write(sock, buffer, strlen(buffer));
@@ -235,11 +277,11 @@ void handle_faculty_input(int sock, char *username, char *password) {
     } else if (strcmp(buffer, "2") == 0) {
         add_course(sock);
     } else if (strcmp(buffer, "3") == 0) {
-        write(STDOUT_FILENO, "Removing course...\n", 19);
+        delete_course(sock);
     } else if (strcmp(buffer, "4") == 0) {
         write(STDOUT_FILENO, "Viewing enrolled students...\n", 30);
     } else if (strcmp(buffer, "5") == 0) {
-        write(STDOUT_FILENO, "Changing password...\n", 21);
+        change_password(sock);
     } else if (strcmp(buffer, "6") == 0) {
         write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
         close(sock);
@@ -261,10 +303,13 @@ void handle_student_input(int sock, char *username, char *password) {
     // Take user choice
     char buffer[BUFFER_SIZE] = {0};
     write(STDOUT_FILENO, "Enter your choice: ", 19);
-    scanf("%s", buffer);
-    // Clear the input buffer
-    while (getchar() != '\n');  // This consumes the newline character
 
+    // Clear buffer and read user input
+    memset(buffer, 0, BUFFER_SIZE);
+    int len = read(STDIN_FILENO, buffer, BUFFER_SIZE);
+    if (len > 0 && buffer[len - 1] == '\n') {
+        buffer[len - 1] = '\0';  // Remove the newline character
+    }
     // Send choice to server
     write(sock, buffer, strlen(buffer));
 
@@ -274,11 +319,11 @@ void handle_student_input(int sock, char *username, char *password) {
     } else if (strcmp(buffer, "2") == 0) {
         enroll_course(sock);
     } else if (strcmp(buffer, "3") == 0) {
-        write(STDOUT_FILENO, "Dropping course...\n", 20);
+        delete_course(sock);
     } else if (strcmp(buffer, "4") == 0) {
         view_student_details(sock, username);
     } else if (strcmp(buffer, "5") == 0) {
-        write(STDOUT_FILENO, "Changing password...\n", 21);
+        change_password(sock);
     } else if (strcmp(buffer, "6") == 0) {
         write(STDOUT_FILENO, "Logging out and exiting...\n", 28);
         close(sock);
@@ -338,15 +383,14 @@ int main() {
     // Send selected role to server
     write(sock, &role_input, sizeof(role_input));
 
+    // Handle login and other logic for different roles
     if (role_input == '1') {
+        // Admin login
         write(STDOUT_FILENO, "Username: ", 10);
         scanf("%s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password in buffer after username
+        scanf("%s", buffer + 50);  // Store password after username in buffer
 
-        // Clear the input buffer
-        while (getchar() != '\n');  // This consumes the newline character
-        // Simulate login process
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer
 
@@ -357,21 +401,17 @@ int main() {
             close(sock);
             return 0;
         }
-        write(STDOUT_FILENO, "Admin menu selected.\n", 21);
 
-        // Call admin menu function here
         while (1) {
-            handle_admin_input(sock, buffer);
+            handle_admin_input(sock, buffer); // Handle Admin tasks
         }
     } else if (role_input == '2') {
+        // Professor login
         write(STDOUT_FILENO, "Username: ", 10);
         scanf("%s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password in buffer after username
+        scanf("%s", buffer + 50);  // Store password after username in buffer
 
-        // Clear the input buffer
-        while (getchar() != '\n');  // This consumes the newline character
-        // Simulate login process
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer
 
@@ -383,23 +423,20 @@ int main() {
 
         write(STDOUT_FILENO, response, strlen(response));
         if (strcmp(response, "Faculty login successful.\n") == 0) {
-            while(1){
-                handle_faculty_input(sock, username, password);
+            while (1) {
+                handle_faculty_input(sock, username, password); // Handle Faculty tasks
             }
         } else {
             close(sock);
             return 0;
         }
-
     } else if (role_input == '3') {
+        // Student login
         write(STDOUT_FILENO, "Username: ", 10);
         scanf("%s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password in buffer after username
+        scanf("%s", buffer + 50);  // Store password after username in buffer
 
-        // Clear the input buffer
-        while (getchar() != '\n');  // This consumes the newline character
-        // Simulate login process
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer
 
@@ -411,8 +448,8 @@ int main() {
 
         write(STDOUT_FILENO, response, strlen(response));
         if (strcmp(response, "Student login successful.\n") == 0) {
-            while(1){
-                handle_student_input(sock, username, password);
+            while (1) {
+                handle_student_input(sock, username, password); // Handle Student tasks
             }
         } else {
             close(sock);

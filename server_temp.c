@@ -163,7 +163,6 @@ void add_faculty(int sock) {
     write(STDOUT_FILENO, received_password, strlen(received_password));
     write(STDOUT_FILENO, "\n", 1);
 
-
     // Construct faculty entry
     char entry[BUFFER_SIZE];
     int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s:x\n", received_username, received_password);
@@ -446,6 +445,129 @@ void enroll_course(int sock, const char *student_username) {
     }
 }
 
+void delete_course(int sock, const char* username_to_edit, const char* filename) {
+    char course_code[BUFFER_SIZE] = {0};
+    read(sock, course_code, BUFFER_SIZE);
+
+    char msg[BUFFER_SIZE];
+    int fd_orig = open(filename, O_RDONLY);
+    char tmp_filename[BUFFER_SIZE];
+    snprintf(tmp_filename, sizeof(tmp_filename), "%s_tmp.txt", filename);
+    int fd_temp = open(tmp_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fd_orig < 0 || fd_temp < 0) {
+        char *err = "Error opening files\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(fd_temp, F_SETLKW, &lock);
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, bytes_read;
+    int found_user = 0, found_course = 0;
+
+    while ((bytes_read = read(fd_orig, buffer, 1)) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 2) {
+            line[idx] = '\0';
+
+            char copy[BUFFER_SIZE];
+            strcpy(copy, line);
+            char *username = strtok(copy, ":");
+            char *password = strtok(NULL, ":");
+            char *courses = strtok(NULL, ":");
+            char *status = strtok(NULL, ":");
+
+            if (username && strcmp(username, username_to_edit) == 0) {
+                found_user = 1;
+
+                char updated_courses[BUFFER_SIZE] = "";
+                if (courses) {
+                    char *token = strtok(courses, ",");
+                    while (token) {
+                        if (strcmp(token, course_code) != 0) {
+                            if (strlen(updated_courses) > 0) strcat(updated_courses, ",");
+                            strcat(updated_courses, token);
+                        } else {
+                            found_course = 1;
+                        }
+                        token = strtok(NULL, ",");
+                    }
+                }
+
+                if (strlen(updated_courses) == 0) strcpy(updated_courses, "x");
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s:%s", username, password, updated_courses, status ? status : "activated");
+            }
+
+            write(fd_temp, line, strlen(line));
+            write(fd_temp, "\n", 1);
+            idx = 0;
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    // Handle last line without newline
+    if (idx > 0) {
+        line[idx] = '\0';
+
+        char copy[BUFFER_SIZE];
+        strcpy(copy, line);
+        char *username = strtok(copy, ":");
+        char *password = strtok(NULL, ":");
+        char *courses = strtok(NULL, ":");
+        char *status = strtok(NULL, ":");
+
+        if (username && strcmp(username, username_to_edit) == 0) {
+            found_user = 1;
+
+            char updated_courses[BUFFER_SIZE] = "";
+            if (courses) {
+                char *token = strtok(courses, ",");
+                while (token) {
+                    if (strcmp(token, course_code) != 0) {
+                        if (strlen(updated_courses) > 0) strcat(updated_courses, ",");
+                        strcat(updated_courses, token);
+                    } else {
+                        found_course = 1;
+                    }
+                    token = strtok(NULL, ",");
+                }
+            }
+
+            if (strlen(updated_courses) == 0) strcpy(updated_courses, "x");
+            snprintf(line, BUFFER_SIZE, "%s:%s:%s:%s", username, password, updated_courses, status ? status : "activated");
+        }
+
+        write(fd_temp, line, strlen(line));
+        write(fd_temp, "\n", 1);
+    }
+
+    lock.l_type = F_UNLCK;
+    fcntl(fd_temp, F_SETLK, &lock);
+
+    close(fd_orig);
+    close(fd_temp);
+
+    rename(tmp_filename, filename);
+
+    if (!found_user) {
+        snprintf(msg, sizeof(msg), "User '%s' not found.\n", username_to_edit);
+    } else if (!found_course) {
+        snprintf(msg, sizeof(msg), "Course '%s' not found for user.\n", course_code);
+    } else {
+        snprintf(msg, sizeof(msg), "Course '%s' deleted successfully.\n", course_code);
+    }
+
+    write(sock, msg, strlen(msg));
+}
+
 void view_student_details(int sock) {
     char username[BUFFER_SIZE] = {0};
 
@@ -550,6 +672,95 @@ void view_faculty_details(int sock){
     }
 
     close(fd);
+}
+
+void change_password(int sock, char role, const char *username) {
+    char new_password[BUFFER_SIZE] = {0};
+    read(sock, new_password, BUFFER_SIZE);
+
+    const char *file = (role == '2') ? "faculties.txt" :
+                       (role == '3') ? "students.txt"  : NULL;
+
+    if (!file) {
+        char *msg = "Invalid role.\n";
+        write(sock, msg, strlen(msg));
+        return;
+    }
+
+    int fd = open(file, O_RDONLY);
+    int tmp_fd = open("temp.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fd < 0 || tmp_fd < 0) {
+        char *err = "Error opening file.\n";
+        write(STDERR_FILENO, err, strlen(err));
+        return;
+    }
+
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(tmp_fd, F_SETLKW, &lock);
+
+    char buffer[1], line[BUFFER_SIZE];
+    int idx = 0, updated = 0;
+    while (read(fd, buffer, 1) > 0) {
+        if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 2) {
+            line[idx] = '\0';
+
+            char copy[BUFFER_SIZE];
+            strcpy(copy, line);
+            char *uname = strtok(copy, ":");
+            char *old_pass = strtok(NULL, ":");
+            char *rest = strtok(NULL, "\n");
+
+            if (uname && strcmp(uname, username) == 0) {
+                if (rest)
+                    snprintf(line, BUFFER_SIZE, "%s:%s:%s", uname, new_password, rest);
+                else
+                    snprintf(line, BUFFER_SIZE, "%s:%s", uname, new_password);
+                updated = 1;
+            }
+
+            write(tmp_fd, line, strlen(line));
+            write(tmp_fd, "\n", 1);
+            idx = 0;
+        } else {
+            line[idx++] = buffer[0];
+        }
+    }
+
+    if (idx > 0) {
+        line[idx] = '\0';
+        char copy[BUFFER_SIZE];
+        strcpy(copy, line);
+        char *uname = strtok(copy, ":");
+        char *old_pass = strtok(NULL, ":");
+        char *rest = strtok(NULL, "\n");
+
+        if (uname && strcmp(uname, username) == 0) {
+            if (rest)
+                snprintf(line, BUFFER_SIZE, "%s:%s:%s", uname, new_password, rest);
+            else
+                snprintf(line, BUFFER_SIZE, "%s:%s", uname, new_password);
+            updated = 1;
+        }
+
+        write(tmp_fd, line, strlen(line));
+        write(tmp_fd, "\n", 1);
+    }
+
+    lock.l_type = F_UNLCK;
+    fcntl(tmp_fd, F_SETLK, &lock);
+    close(fd);
+    close(tmp_fd);
+    rename("temp.txt", file);
+
+    char *msg = updated ? "Password updated successfully.\n"
+                        : "User not found.\n";
+    write(sock, msg, strlen(msg));
 }
 
 int validate_student(const char *username, const char *password) {
@@ -669,36 +880,7 @@ int run_admin_menu(int sock){
     return 0;
 }
 
-int run_professor_menu(int sock) {
-    // Receive username and password for validation
-    char received_username[BUFFER_SIZE] = {0};
-    char received_password[BUFFER_SIZE] = {0};
-
-    read(sock, received_username, BUFFER_SIZE);
-    read(sock, received_password, BUFFER_SIZE);
-
-    write(STDOUT_FILENO, "Received username: ", 19);
-    write(STDOUT_FILENO, received_username, strlen(received_username));
-    write(STDOUT_FILENO, "\n", 1);
-    write(STDOUT_FILENO, "Received password: ", 19);
-    write(STDOUT_FILENO, received_password, strlen(received_password));
-    write(STDOUT_FILENO, "\n", 1);
-
-    if (!faculty_exists(received_username)){
-        write(STDOUT_FILENO, "Faculty does not exist.\n", 24);
-        write(sock, "Faculty not found.\n", 20);
-        return 1;
-    }
-
-    if (validate_faculty(received_username, received_password)) {
-        write(STDOUT_FILENO, "Faculty login successful.\n", 26);
-        write(sock, "Faculty login successful.\n", 26);
-    } else {
-        write(STDOUT_FILENO, "Invalid credentials.\n", 21);
-        write(sock, "Invalid credentials.\n", 21);
-        return 1;
-    }
-
+int run_professor_menu(int sock, char role, const char *received_username) {
     char task_choice;
     read(sock, &task_choice, sizeof(task_choice));
     printf("Received task choice: %c\n", task_choice);
@@ -712,14 +894,14 @@ int run_professor_menu(int sock) {
         add_course(sock, received_username);
     } else if (task_choice == '3') {
         // Remove course
-        write(STDOUT_FILENO, "Removing course...\n", 20);
+        delete_course(sock, received_username, "faculties.txt");
     } else if (task_choice == '4') {
         // View enrolled students
         write(STDOUT_FILENO, "Viewing enrolled students...\n", 30);
     } else if (task_choice == '5') {
         // Change password
-        write(STDOUT_FILENO, "Changing password...\n", 21);
-    } else if (task_choice == '9') {
+        change_password(sock, role, received_username);
+    } else if (task_choice == '6') {
         char *msg = "Logging out and exiting...\n";
         write(sock, msg, strlen(msg));
         close(sock);
@@ -731,36 +913,7 @@ int run_professor_menu(int sock) {
     return 0;
 }
 
-int run_student_menu(int sock) {
-    // Receive username and password for validation
-    char received_username[BUFFER_SIZE] = {0};
-    char received_password[BUFFER_SIZE] = {0};
-
-    read(sock, received_username, BUFFER_SIZE);
-    read(sock, received_password, BUFFER_SIZE);
-
-    write(STDOUT_FILENO, "Received username: ", 19);
-    write(STDOUT_FILENO, received_username, strlen(received_username));
-    write(STDOUT_FILENO, "\n", 1);
-    write(STDOUT_FILENO, "Received password: ", 19);
-    write(STDOUT_FILENO, received_password, strlen(received_password));
-    write(STDOUT_FILENO, "\n", 1);
-
-    if (!student_exists(received_username)){
-        write(STDOUT_FILENO, "Student does not exist.\n", 24);
-        write(sock, "Student not found.\n", 20);
-        return 1;
-    }
-
-    if (validate_student(received_username, received_password)) {
-        write(STDOUT_FILENO, "Student login successful.\n", 26);
-        write(sock, "Student login successful.\n", 26);
-    } else {
-        write(STDOUT_FILENO, "Invalid credentials.\n", 21);
-        write(sock, "Invalid credentials.\n", 21);
-        return 1;
-    }
-
+int run_student_menu(int sock, char role, const char *received_username) {
     char task_choice;
     read(sock, &task_choice, sizeof(task_choice));
     printf("Received task choice: %c\n", task_choice);
@@ -774,11 +927,15 @@ int run_student_menu(int sock) {
         enroll_course(sock, received_username);
     } else if (task_choice == '3') {
         // Drop course
-        write(STDOUT_FILENO, "Dropping course...\n", 20);
+        delete_course(sock, received_username, "students.txt");
     } else if (task_choice == '4') {
         // View enrolled courses
         write(STDOUT_FILENO, "Viewing enrolled courses...\n", 28);
-    } else if (task_choice == '9') {
+
+    } else if (task_choice == '5') {
+        // Change password
+        change_password(sock, role, received_username);
+    } else if (task_choice == '6'){
         char *msg = "Logging out and exiting...\n";
         write(sock, msg, strlen(msg));
         close(sock);
@@ -837,17 +994,91 @@ int main() {
 
     if (role_input == '1') {
         // Admin menu
-        int ret = run_admin_menu(sock);
-        if (ret == 1) {
-            close(sock);
-            return 0; // Exit after admin menu
+        while(1) {
+            int ret = run_admin_menu(sock);
+            if (ret == 1) {
+                close(sock);
+                return 0; // Exit after admin menu
+            }
         }
     } else if (role_input == '2') {
         // Professor menu
-        int ret = run_professor_menu(sock);
+
+        // Receive username and password for validation
+        char received_username[BUFFER_SIZE] = {0};
+        char received_password[BUFFER_SIZE] = {0};
+
+        read(sock, received_username, BUFFER_SIZE);
+        read(sock, received_password, BUFFER_SIZE);
+
+        write(STDOUT_FILENO, "Received username: ", 19);
+        write(STDOUT_FILENO, received_username, strlen(received_username));
+        write(STDOUT_FILENO, "\n", 1);
+        write(STDOUT_FILENO, "Received password: ", 19);
+        write(STDOUT_FILENO, received_password, strlen(received_password));
+        write(STDOUT_FILENO, "\n", 1);
+
+        if (!faculty_exists(received_username)){
+            write(STDOUT_FILENO, "Faculty does not exist.\n", 24);
+            write(sock, "Faculty not found.\n", 20);
+            return 1;
+        }
+
+        if (validate_faculty(received_username, received_password)) {
+            write(STDOUT_FILENO, "Faculty login successful.\n", 26);
+            write(sock, "Faculty login successful.\n", 26);
+        } else {
+            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+            write(sock, "Invalid credentials.\n", 21);
+            return 1;
+        }
+
+        while(1) {
+            int ret = run_professor_menu(sock, role_input, received_username);
+            if (ret == 1) {
+                close(sock);
+                return 0; // Exit after professor menu
+            }
+        }
     } else if (role_input == '3') {
         // Student menu
-        int ret = run_student_menu(sock);
+
+        // Receive username and password for validation
+        char received_username[BUFFER_SIZE] = {0};
+        char received_password[BUFFER_SIZE] = {0};
+
+        read(sock, received_username, BUFFER_SIZE);
+        read(sock, received_password, BUFFER_SIZE);
+
+        write(STDOUT_FILENO, "Received username: ", 19);
+        write(STDOUT_FILENO, received_username, strlen(received_username));
+        write(STDOUT_FILENO, "\n", 1);
+        write(STDOUT_FILENO, "Received password: ", 19);
+        write(STDOUT_FILENO, received_password, strlen(received_password));
+        write(STDOUT_FILENO, "\n", 1);
+
+        if (!student_exists(received_username)){
+            write(STDOUT_FILENO, "Student does not exist.\n", 24);
+            write(sock, "Student not found.\n", 20);
+            return 1;
+        }
+
+        if (validate_student(received_username, received_password)) {
+            write(STDOUT_FILENO, "Student login successful.\n", 26);
+            write(sock, "Student login successful.\n", 26);
+        } else {
+            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+            write(sock, "Invalid credentials.\n", 21);
+            return 1;
+        }
+
+        while(1) {
+            int ret = run_student_menu(sock, role_input, received_username);
+            if (ret == 1) {
+                close(sock);
+                return 0; // Exit after student menu
+            }
+        }
     } else if (role_input == '9') {
         write(STDOUT_FILENO, "Client disconnected.\n", 23);
         close(sock);
