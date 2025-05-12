@@ -88,23 +88,23 @@ void view_all_courses(int sock) {
     }
 }
 
-void view_student_details(int sock, char *username) {
-    // Send student ID to server
+int view_student_details(int sock, char *username) {
     write(sock, username, BUFFER_SIZE);
-    // Here you would typically wait for a response from the server
     char response[BUFFER_SIZE] = {0};
     read(sock, response, BUFFER_SIZE);
 
     if (strcmp(response, "Student not found.\n") == 0) {
         write(STDERR_FILENO, response, strlen(response));
+        return 0;  // Indicate failure
     } else {
         write(STDOUT_FILENO, "Student courses: ", 17);
         write(STDOUT_FILENO, response, strlen(response));
         write(STDOUT_FILENO, "\n", 1);
+        return 1;  // Success
     }
 }
 
-void view_faculty_details(int sock, char *username) {
+int view_faculty_details(int sock, char *username) {
     // Send faculty ID to server
     write(sock, username, BUFFER_SIZE);
     // Here you would typically wait for a response from the server
@@ -113,9 +113,11 @@ void view_faculty_details(int sock, char *username) {
 
     if (strcmp(response, "Faculty not found.\n") == 0) {
         write(STDERR_FILENO, response, strlen(response));
+        return 0;  // Indicate failure
     } else {
         write(STDOUT_FILENO, response, strlen(response));
         write(STDOUT_FILENO, "\n", 1);
+        return 1;  // Success
     }
 }
 
@@ -271,6 +273,7 @@ void change_password(int sock){
 // Handle user input for admin, faculty, or student
 void handle_admin_input(int sock, char *buffer) {
     // Display menu options
+    write(STDOUT_FILENO, "\n....... Welcome to Admin Menu .......\n", 39);
     write(STDOUT_FILENO, "1. Add Student\n", 15);
     write(STDOUT_FILENO, "2. View Student Details\n", 24);
     write(STDOUT_FILENO, "3. Add Faculty\n", 15);
@@ -301,7 +304,7 @@ void handle_admin_input(int sock, char *buffer) {
         if (len > 0 && username[len - 1] == '\n') {
             username[len - 1] = '\0';
         }
-        view_student_details(sock, username);
+        if (!view_student_details(sock, username)) return;
     } else if (strcmp(buffer, "3") == 0) {
         add_faculty(sock);
     } else if (strcmp(buffer, "4") == 0) {
@@ -311,7 +314,7 @@ void handle_admin_input(int sock, char *buffer) {
         if (len > 0 && username[len - 1] == '\n') {
             username[len - 1] = '\0';
         }
-        view_faculty_details(sock, username);
+        if (!view_faculty_details(sock, username)) return;
     } else if (strcmp(buffer, "5") == 0) {
         activate_student(sock);
     } else if (strcmp(buffer, "6") == 0) {
@@ -327,6 +330,7 @@ void handle_admin_input(int sock, char *buffer) {
 
 void handle_faculty_input(int sock, char *username, char *password) {
     // Display menu options
+    write(STDOUT_FILENO, "\n....... Welcome to Faculty Menu .......\n", 41);
     write(STDOUT_FILENO, "1. View Offering Courses\n", 26);
     write(STDOUT_FILENO, "2. Add New Course\n", 19);
     write(STDOUT_FILENO, "3. Remove Course from Catalog\n", 31);
@@ -370,6 +374,7 @@ void handle_faculty_input(int sock, char *username, char *password) {
 
 void handle_student_input(int sock, char *username, char *password) {
     // Display menu options
+    write(STDOUT_FILENO, "\n....... Welcome to Student Menu .......\n", 41);
     write(STDOUT_FILENO, "1. View Courses\n", 16);
     write(STDOUT_FILENO, "2. Enroll (pick) New Course\n", 28);
     write(STDOUT_FILENO, "3. Drop Course\n", 16);
@@ -446,7 +451,9 @@ int main() {
     write(STDOUT_FILENO, "Connection established.\n", 24);
 
     // Take input for user role
-    write(STDOUT_FILENO, "Enter 1 for Admin, 2 for Professor, 3 for Student: ", 51);
+    write(STDOUT_FILENO, "....................Welcome Back to Academia :: Course Registration....................\n", 89);
+    write(STDOUT_FILENO, "Login Type\n", 11);
+    write(STDOUT_FILENO, "Enter Your Choice { 1.Admin , 2.Professor, 3. Student } : ", 58);
     read(STDIN_FILENO, &role_input, 1);
 
     // Clear the newline character left in the input buffer
@@ -473,8 +480,10 @@ int main() {
 
         if (strcmp(username, "admin") == 0 && strcmp(password, "admin123") == 0) {
             write(STDOUT_FILENO, "Login successful.\n", 18);
+            write(sock, "Admin login successful.\n", 25);
         } else {
             write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+            write(sock, "Invalid credentials.\n", 21);
             close(sock);
             return 0;
         }

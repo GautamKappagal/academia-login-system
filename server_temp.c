@@ -724,13 +724,21 @@ void view_student_details(int sock) {
     if (!found) {
         char *err = "Student not found.\n";
         write(STDERR_FILENO, err, strlen(err));
+        write(sock, err, strlen(err));
     }
 
     close(fd);
 }
 
-void view_faculty_details(int sock){
-    // Open faculties.txt in read mode
+void view_faculty_details(int sock) {
+    char username[BUFFER_SIZE] = {0};
+
+    // Read faculty username from socket
+    read(sock, username, BUFFER_SIZE);
+    write(STDOUT_FILENO, "Received username: ", 19);
+    write(STDOUT_FILENO, username, strlen(username));
+    write(STDOUT_FILENO, "\n", 1);
+
     int fd = open("faculties.txt", O_RDONLY);
     if (fd < 0) {
         char *err = "Error opening faculties.txt\n";
@@ -740,39 +748,43 @@ void view_faculty_details(int sock){
 
     char buffer[1], line[BUFFER_SIZE];
     int idx = 0, bytes_read;
-    char details[BUFFER_SIZE] = {0};
+    int found = 0;
 
     while ((bytes_read = read(fd, buffer, 1)) > 0) {
         if (buffer[0] == '\n' || idx >= BUFFER_SIZE - 1) {
-            line[idx] = '\0'; // terminate the string
+            line[idx] = '\0';
             idx = 0;
 
-            // Extract username (before first colon)
             char temp_line[BUFFER_SIZE];
-            strcpy(temp_line, line); // to preserve original
-            char *token = strtok(temp_line, ":"); // username
+            strcpy(temp_line, line);
+            char *token = strtok(temp_line, ":");  // username
 
-            sprintf(details, "Faculty: %s\n", token);
-            // Skip password
-            token = strtok(NULL, ":");
-            // Extract courses
-            token = strtok(NULL, ":");
-            if (strcmp(token, "x") != 0){
-                strcat(details, token);
-                strcat(details, "\n");
-            } else {
-                strcat(details, "No courses found.\n");
+            if (token && strcmp(token, username) == 0) {
+                found = 1;
+                char details[BUFFER_SIZE] = {0};
+                sprintf(details, "Faculty: %s\n", token);
+
+                token = strtok(NULL, ":");  // skip password
+                token = strtok(NULL, ":");  // courses
+
+                if (token && strcmp(token, "x") != 0) {
+                    strcat(details, token);
+                    strcat(details, "\n");
+                } else {
+                    strcat(details, "No courses found.\n");
+                }
+
+                write(sock, details, strlen(details));
+                break;
             }
         } else {
             line[idx++] = buffer[0];
         }
     }
 
-    if (strlen(details) > 0) {
-        write(sock, details, strlen(details));
-    } else {
-        char *err = "No faculty details found.\n";
-        write(STDERR_FILENO, err, strlen(err));
+    if (!found) {
+        char *msg = "Faculty not found.\n";
+        write(sock, msg, strlen(msg));
     }
 
     close(fd);
@@ -802,6 +814,14 @@ void update_course(int sock, const char* username) {
         close(fd);
         return;
     }
+
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(temp_fd, F_SETLKW, &lock);
 
     char ch, line[BUFFER_SIZE];
     int idx = 0, bytes_read, faculty_found = 0;
@@ -852,6 +872,10 @@ void update_course(int sock, const char* username) {
         return;
     }
 
+    // Unlock
+    lock.l_type = F_UNLCK;
+    fcntl(temp_fd, F_SETLK, &lock);
+
     // ----------- Update students.txt ----------
     fd = open("students.txt", O_RDONLY);
     if (fd < 0) {
@@ -865,6 +889,13 @@ void update_course(int sock, const char* username) {
         close(fd);
         return;
     }
+
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(temp_fd, F_SETLKW, &lock);
 
     idx = 0;
     while ((bytes_read = read(fd, &ch, 1)) > 0) {
@@ -905,6 +936,10 @@ void update_course(int sock, const char* username) {
     close(fd);
     close(temp_fd);
     rename("students_temp.txt", "students.txt");
+
+    // Unlock
+    lock.l_type = F_UNLCK;
+    fcntl(temp_fd, F_SETLK, &lock);
 
     // Final acknowledgment
     write(sock, "Course ID updated for faculty and students.\n", 45);
@@ -1017,6 +1052,14 @@ void activate(int sock, const char *username) {
     write(STDOUT_FILENO, username, strlen(username));
     write(STDOUT_FILENO, "\n", 1);
 
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(temp_fd, F_SETLKW, &lock);
+
     char ch, line[BUFFER_SIZE];
     int idx = 0, bytes_read, found = 0;
 
@@ -1044,6 +1087,9 @@ void activate(int sock, const char *username) {
             line[idx++] = ch;
         }
     }
+
+    lock.l_type = F_UNLCK;
+    fcntl(temp_fd, F_SETLK, &lock);
 
     close(fd);
     close(temp_fd);
@@ -1078,6 +1124,14 @@ void block(int sock, const char *username) {
     write(STDOUT_FILENO, username, strlen(username));
     write(STDOUT_FILENO, "\n", 1);
 
+    struct flock lock;
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    lock.l_pid = getpid();
+    fcntl(temp_fd, F_SETLKW, &lock);
+
     char ch, line[BUFFER_SIZE];
     int idx = 0, bytes_read, found = 0;
 
@@ -1105,6 +1159,9 @@ void block(int sock, const char *username) {
             line[idx++] = ch;
         }
     }
+
+    lock.l_type = F_UNLCK;
+    fcntl(temp_fd, F_SETLK, &lock);
 
     close(fd);
     close(temp_fd);
@@ -1316,6 +1373,9 @@ int main() {
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
+
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     printf("Server socket created successfully.\n");
 
     address.sin_family = AF_INET;
@@ -1351,6 +1411,15 @@ int main() {
 
     if (role_input == '1') {
         // Admin menu
+        char buffer[BUFFER_SIZE] = {0};
+        read(sock, buffer, BUFFER_SIZE);
+        if (strcmp(buffer, "Admin login successful.\n") != 0) {
+            close(sock);
+            return 1;
+        }
+
+        write(STDOUT_FILENO, buffer, strlen(buffer));
+
         while(1) {
             int ret = run_admin_menu(sock);
             if (ret == 1) {
