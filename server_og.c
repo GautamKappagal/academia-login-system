@@ -4,16 +4,16 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdio.h>
-
-#define BUFFER_SIZE 1024
+// Structure to pass client data to threads
+typedef struct {
+    int sock;
+    struct sockaddr_in address;
+} client_data_t;
 
 int check_if_blocked(const char *username) {
     int fd = open("students.txt", O_RDONLY);
@@ -155,7 +155,7 @@ void add_student(int sock) {// Receive username and password
 
     // Construct student entry
     char entry[BUFFER_SIZE];
-    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s: :1\n", received_username, received_password);
+    int entry_len = snprintf(entry, BUFFER_SIZE, "%s:%s:x:1\n", received_username, received_password);
 
     // Open students.txt in append mode, create if doesn't exist
     int fd = open("students.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -1361,11 +1361,154 @@ int run_student_menu(int sock, char role, const char *received_username) {
     return 0;
 }
 
+// Mutex for thread-safe file operations
+pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void* handle_client(void* arg) {
+    client_data_t* data = (client_data_t*)arg;
+    int sock = data->sock;
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(data->address.sin_addr), client_ip, INET_ADDRSTRLEN);
+    printf("New connection from %s\n", client_ip);
+
+    // Receive role input from client
+    char role_input;
+    read(sock, &role_input, sizeof(role_input));
+    printf("Received role input: %c from %s\n", role_input, client_ip);
+
+    if (role_input == '1') {
+        // Admin menu
+        char buffer[BUFFER_SIZE] = {0};
+        read(sock, buffer, BUFFER_SIZE);
+        if (strcmp(buffer, "Admin login successful.\n") != 0) {
+            close(sock);
+            free(data);
+            pthread_exit(NULL);
+        }
+
+        write(STDOUT_FILENO, buffer, strlen(buffer));
+
+        while(1) {
+            int ret = run_admin_menu(sock);
+            if (ret == 1) {
+                break; // Exit after admin menu
+            }
+        }
+    } else if (role_input == '2') {
+        // Professor menu
+        char received_username[BUFFER_SIZE] = {0};
+        char received_password[BUFFER_SIZE] = {0};
+
+        read(sock, received_username, BUFFER_SIZE);
+        read(sock, received_password, BUFFER_SIZE);
+
+        write(STDOUT_FILENO, "Received username: ", 19);
+        write(STDOUT_FILENO, received_username, strlen(received_username));
+        write(STDOUT_FILENO, "\n", 1);
+        write(STDOUT_FILENO, "Received password: ", 19);
+        write(STDOUT_FILENO, received_password, strlen(received_password));
+        write(STDOUT_FILENO, "\n", 1);
+
+        pthread_mutex_lock(&file_mutex);
+        int faculty_exist = faculty_exists(received_username);
+        int valid = validate_faculty(received_username, received_password);
+        pthread_mutex_unlock(&file_mutex);
+
+        if (!faculty_exist){
+            write(STDOUT_FILENO, "Faculty does not exist.\n", 24);
+            write(sock, "Faculty not found.\n", 20);
+            close(sock);
+            free(data);
+            pthread_exit(NULL);
+        }
+
+        if (valid) {
+            write(STDOUT_FILENO, "Faculty login successful.\n", 26);
+            write(sock, "Faculty login successful.\n", 26);
+        } else {
+            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+            write(sock, "Invalid credentials.\n", 21);
+            close(sock);
+            free(data);
+            pthread_exit(NULL);
+        }
+
+        while(1) {
+            int ret = run_professor_menu(sock, role_input, received_username);
+            if (ret == 1) {
+                break; // Exit after professor menu
+            }
+        }
+    } else if (role_input == '3') {
+        // Student menu
+        char received_username[BUFFER_SIZE] = {0};
+        char received_password[BUFFER_SIZE] = {0};
+
+        read(sock, received_username, BUFFER_SIZE);
+        read(sock, received_password, BUFFER_SIZE);
+
+        write(STDOUT_FILENO, "Received username: ", 19);
+        write(STDOUT_FILENO, received_username, strlen(received_username));
+        write(STDOUT_FILENO, "\n", 1);
+        write(STDOUT_FILENO, "Received password: ", 19);
+        write(STDOUT_FILENO, received_password, strlen(received_password));
+        write(STDOUT_FILENO, "\n", 1);
+
+        pthread_mutex_lock(&file_mutex);
+        int student_exist = student_exists(received_username);
+        int valid = validate_student(received_username, received_password);
+        int blocked = check_if_blocked(received_username);
+        pthread_mutex_unlock(&file_mutex);
+
+        if (!student_exist){
+            write(STDOUT_FILENO, "Student does not exist.\n", 24);
+            write(sock, "Student not found.\n", 20);
+            close(sock);
+            free(data);
+            pthread_exit(NULL);
+        }
+
+        if (valid) {
+            write(STDOUT_FILENO, "Student login successful.\n", 26);
+            if (blocked) {
+                write(STDOUT_FILENO, "Student is blocked.\n", 21);
+                write(sock, "Student is blocked.\n", 21);
+                close(sock);
+                free(data);
+                pthread_exit(NULL);
+            }
+
+            write(sock, "Student login successful.\n", 26);
+        } else {
+            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
+            write(sock, "Invalid credentials.\n", 21);
+            close(sock);
+            free(data);
+            pthread_exit(NULL);
+        }
+
+        while(1) {
+            int ret = run_student_menu(sock, role_input, received_username);
+            if (ret == 1) {
+                break; // Exit after student menu
+            }
+        }
+    } else if (role_input == '9') {
+        write(STDOUT_FILENO, "Client disconnected.\n", 23);
+    } else {
+        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
+    }
+
+    close(sock);
+    free(data);
+    printf("Client %s disconnected\n", client_ip);
+    pthread_exit(NULL);
+}
+
 int main() {
-    int server_fd, sock;
+    int server_fd;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
-    char buffer[BUFFER_SIZE] = {0};
 
     // Creating socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -1379,7 +1522,7 @@ int main() {
     printf("Server socket created successfully.\n");
 
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY; // 0.0.0.0
+    address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
     // Binding socket
@@ -1390,132 +1533,36 @@ int main() {
     printf("Server bound to port %d.\n", PORT);
 
     // Listening for connections
-    if (listen(server_fd, 3) < 0) {
+    if (listen(server_fd, 10) < 0) {  // Increased backlog to 10
         perror("listen failed");
         exit(EXIT_FAILURE);
     }
     printf("Server listening on port %d...\n", PORT);
 
-    // Accepting client connection
-    sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-    if (sock < 0) {
-        perror("accept failed");
-        exit(EXIT_FAILURE);
+    while (1) {
+        // Accepting client connection
+        client_data_t *client_data = malloc(sizeof(client_data_t));
+        client_data->sock = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (client_data->sock < 0) {
+            perror("accept failed");
+            free(client_data);
+            continue;
+        }
+
+        memcpy(&client_data->address, &address, sizeof(address));
+
+        pthread_t thread_id;
+        if (pthread_create(&thread_id, NULL, handle_client, (void*)client_data) != 0) {
+            perror("Failed to create thread");
+            close(client_data->sock);
+            free(client_data);
+            continue;
+        }
+
+        // Detach the thread so we don't need to join it
+        pthread_detach(thread_id);
     }
-    printf("Client connected.\n");
 
-    // Receive role input from client
-    char role_input;
-    read(sock, &role_input, sizeof(role_input));
-    printf("Received role input: %c\n", role_input);
-
-    if (role_input == '1') {
-        // Admin menu
-        char buffer[BUFFER_SIZE] = {0};
-        read(sock, buffer, BUFFER_SIZE);
-        if (strcmp(buffer, "Admin login successful.\n") != 0) {
-            close(sock);
-            return 1;
-        }
-
-        write(STDOUT_FILENO, buffer, strlen(buffer));
-
-        while(1) {
-            int ret = run_admin_menu(sock);
-            if (ret == 1) {
-                close(sock);
-                return 0; // Exit after admin menu
-            }
-        }
-    } else if (role_input == '2') {
-        // Professor menu
-
-        // Receive username and password for validation
-        char received_username[BUFFER_SIZE] = {0};
-        char received_password[BUFFER_SIZE] = {0};
-
-        read(sock, received_username, BUFFER_SIZE);
-        read(sock, received_password, BUFFER_SIZE);
-
-        write(STDOUT_FILENO, "Received username: ", 19);
-        write(STDOUT_FILENO, received_username, strlen(received_username));
-        write(STDOUT_FILENO, "\n", 1);
-        write(STDOUT_FILENO, "Received password: ", 19);
-        write(STDOUT_FILENO, received_password, strlen(received_password));
-        write(STDOUT_FILENO, "\n", 1);
-
-        if (!faculty_exists(received_username)){
-            write(STDOUT_FILENO, "Faculty does not exist.\n", 24);
-            write(sock, "Faculty not found.\n", 20);
-            return 1;
-        }
-
-        if (validate_faculty(received_username, received_password)) {
-            write(STDOUT_FILENO, "Faculty login successful.\n", 26);
-            write(sock, "Faculty login successful.\n", 26);
-        } else {
-            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
-            write(sock, "Invalid credentials.\n", 21);
-            return 1;
-        }
-
-        while(1) {
-            int ret = run_professor_menu(sock, role_input, received_username);
-            if (ret == 1) {
-                close(sock);
-                return 0; // Exit after professor menu
-            }
-        }
-    } else if (role_input == '3') {
-        // Student menu
-
-        // Receive username and password for validation
-        char received_username[BUFFER_SIZE] = {0};
-        char received_password[BUFFER_SIZE] = {0};
-
-        read(sock, received_username, BUFFER_SIZE);
-        read(sock, received_password, BUFFER_SIZE);
-
-        write(STDOUT_FILENO, "Received username: ", 19);
-        write(STDOUT_FILENO, received_username, strlen(received_username));
-        write(STDOUT_FILENO, "\n", 1);
-        write(STDOUT_FILENO, "Received password: ", 19);
-        write(STDOUT_FILENO, received_password, strlen(received_password));
-        write(STDOUT_FILENO, "\n", 1);
-
-        if (!student_exists(received_username)){
-            write(STDOUT_FILENO, "Student does not exist.\n", 24);
-            write(sock, "Student not found.\n", 20);
-            return 1;
-        }
-
-        if (validate_student(received_username, received_password)) {
-            write(STDOUT_FILENO, "Student login successful.\n", 26);
-            if (check_if_blocked(received_username)) {
-                write(STDOUT_FILENO, "Student is blocked.\n", 21);
-                write(sock, "Student is blocked.\n", 21);
-                return 1;
-            }
-
-            write(sock, "Student login successful.\n", 26);
-        } else {
-            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
-            write(sock, "Invalid credentials.\n", 21);
-            return 1;
-        }
-
-        while(1) {
-            int ret = run_student_menu(sock, role_input, received_username);
-            if (ret == 1) {
-                close(sock);
-                return 0; // Exit after student menu
-            }
-        }
-    } else if (role_input == '9') {
-        write(STDOUT_FILENO, "Client disconnected.\n", 23);
-        close(sock);
-        return 0; // Exit after client disconnect
-    } else {
-        write(STDOUT_FILENO, "Invalid choice. Please try again.\n", 35);
-    }
+    close(server_fd);
+    return 0;
 }
