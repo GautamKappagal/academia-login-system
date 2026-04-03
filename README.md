@@ -86,11 +86,3 @@ You can use sample entries from the text files, e.g.:
 - File locking ensures safe concurrent access
 
 ---
-
-## 📷 Sample Output
-The system provides CLI-based menus for Admin, Faculty, and Student roles.
-
----
-
-## 👤 Author
-Gautam Kappagal
