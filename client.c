@@ -33,12 +33,7 @@ void add_student(int sock) {
     // Read whether the student was added successfully
     char response[BUFFER_SIZE] = {0};
     read(sock, response, BUFFER_SIZE);
-
-    if (strcmp(response, "Username already exists.\n") == 0) {
-        write(STDERR_FILENO, response, strlen(response));
-    } else {
-        write(STDOUT_FILENO, "Student added successfully.\n", 28);
-    }
+    write(STDOUT_FILENO, response, strlen(response));
 }
 
 void add_faculty(int sock) {
@@ -66,12 +61,7 @@ void add_faculty(int sock) {
     // Read whether the faculty was added successfully
     char response[BUFFER_SIZE] = {0};
     read(sock, response, BUFFER_SIZE);
-
-    if (strcmp(response, "Username already exists.\n") == 0) {
-        write(STDERR_FILENO, response, strlen(response));
-    } else {
-        write(STDOUT_FILENO, "Faculty added successfully.\n", 28);
-    }
+    write(STDOUT_FILENO, response, strlen(response));
 }
 
 void view_all_courses(int sock) {
@@ -329,6 +319,7 @@ void handle_admin_input(int sock, char *buffer) {
 }
 
 void handle_faculty_input(int sock, char *username, char *password) {
+    (void)password;
     // Display menu options
     write(STDOUT_FILENO, "\n....... Welcome to Faculty Menu .......\n", 41);
     write(STDOUT_FILENO, "1. View Offering Courses\n", 26);
@@ -373,6 +364,7 @@ void handle_faculty_input(int sock, char *username, char *password) {
 }
 
 void handle_student_input(int sock, char *username, char *password) {
+    (void)password;
     // Display menu options
     write(STDOUT_FILENO, "\n....... Welcome to Student Menu .......\n", 41);
     write(STDOUT_FILENO, "1. View Courses\n", 16);
@@ -471,19 +463,21 @@ int main() {
     if (role_input == '1') {
         // Admin login
         write(STDOUT_FILENO, "Username: ", 10);
-        scanf("%s", buffer);
+        scanf("%49s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password after username in buffer
+        scanf("%973s", buffer + 50);  // Store password after username in buffer
 
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer
 
-        if (strcmp(username, "admin") == 0 && strcmp(password, "admin123") == 0) {
-            write(STDOUT_FILENO, "Login successful.\n", 18);
-            write(sock, "Admin login successful.\n", 25);
-        } else {
-            write(STDOUT_FILENO, "Invalid credentials.\n", 21);
-            write(sock, "Invalid credentials.\n", 21);
+        write(sock, username, BUFFER_SIZE);
+        write(sock, password, BUFFER_SIZE);
+
+        char response[BUFFER_SIZE] = {0};
+        read(sock, response, BUFFER_SIZE);
+        write(STDOUT_FILENO, response, strlen(response));
+
+        if (strcmp(response, "Admin login successful.\n") != 0) {
             close(sock);
             return 0;
         }
@@ -494,9 +488,9 @@ int main() {
     } else if (role_input == '2') {
         // Professor login
         write(STDOUT_FILENO, "Username: ", 10);
-        scanf("%s", buffer);
+        scanf("%49s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password after username in buffer
+        scanf("%973s", buffer + 50);  // Store password after username in buffer
 
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer
@@ -519,9 +513,9 @@ int main() {
     } else if (role_input == '3') {
         // Student login
         write(STDOUT_FILENO, "Username: ", 10);
-        scanf("%s", buffer);
+        scanf("%49s", buffer);
         write(STDOUT_FILENO, "Password: ", 10);
-        scanf("%s", buffer + 50);  // Store password after username in buffer
+        scanf("%973s", buffer + 50);  // Store password after username in buffer
 
         char *username = buffer;
         char *password = buffer + 50;  // Password is stored after username in buffer

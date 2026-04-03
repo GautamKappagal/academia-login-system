@@ -1,0 +1,4 @@
+gautam:gautamkappagal:CS127,CS192,EGC201,XYZ123:1
+rohan:rohan123:x:1
+johndoe:janedoe1589:CS127,XYZ123:1
+michael:michael99:SM111,ECE417:1
